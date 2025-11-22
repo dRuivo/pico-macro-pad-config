@@ -1,0 +1,91 @@
+/* Additional styles to bridge the gap between app.css and component styles */
+
+/* Status indicators */
+.status-error {
+	background: var(--color-error-50);
+	border: 1px solid var(--color-error-200);
+	color: var(--color-error-700);
+	padding: var(--space-3) var(--space-4);
+	border-radius: var(--radius-md);
+	font-size: var(--text-sm);
+}
+
+/* Panel grid layout for main content */
+.panel-grid {
+	display: grid;
+	gap: var(--space-6);
+	height: 100%;
+	padding: var(--space-6);
+}
+
+/* Serial monitor specific styles */
+.serial-input {
+	display: flex;
+	gap: var(--space-3);
+	align-items: center;
+}
+
+.serial-input input {
+	flex: 1;
+}
+
+.serial-log {
+	background: var(--app-panel-bg);
+	border: 1px solid var(--app-border);
+	border-radius: var(--radius-lg);
+	padding: var(--space-4);
+	max-height: 400px;
+	overflow-y: auto;
+	font-family: var(--font-mono);
+	font-size: var(--text-sm);
+}
+
+.serial-log pre {
+	margin: 0;
+	color: var(--app-text);
+	white-space: pre-wrap;
+	word-wrap: break-word;
+	line-height: 1.4;
+}
+
+/* KeyGrid specific overrides */
+:global(.grid) {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: var(--space-3);
+	padding: var(--space-4);
+}
+
+/* Ensure topbar uses design system */
+.topbar h1 {
+	font-family: var(--font-heading);
+	color: var(--app-text);
+	margin: 0;
+}
+
+.topbar p {
+	color: var(--app-text-muted);
+	margin: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+	.panel-grid {
+		grid-template-columns: 1fr;
+		gap: var(--space-4);
+		padding: var(--space-4);
+	}
+}
+
+@media (max-width: 768px) {
+	.topbar {
+		flex-direction: column;
+		gap: var(--space-3);
+		align-items: flex-start;
+	}
+
+	.serial-input {
+		flex-direction: column;
+		align-items: stretch;
+	}
+}
