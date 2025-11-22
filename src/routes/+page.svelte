@@ -1,19 +1,27 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import KeyGrid from '$lib/KeyGrid.svelte';
+	import KeypadMockup from '$lib/KeypadMockup.svelte';
 	import { requestPort, openPort, closePort, writeLine, startReadLoop } from '$lib/serial';
 	import {
 		connectionState,
 		macropadState,
+		monitorState,
+		uiState,
 		connectionActions,
 		macropadActions,
-		monitorActions
+		monitorActions,
+		uiActions
 	} from '$lib/store';
-	import SerialLog from '$lib/SerialLog.svelte';
 
 	// Reactive store subscriptions
 	$: ({ connected, connection, serialSupported } = $connectionState);
 	$: ({ keys, activeKeyIndex } = $macropadState);
+	$: ({ log, txInput } = $monitorState);
+	$: ({ currentView } = $uiState);
+
+	// Local state for view toggle
+	let mockupView = false;
 
 	onMount(() => {
 		connectionActions.setSerialSupported('serial' in navigator);
@@ -41,6 +49,14 @@
 		await closePort(connection);
 		connectionActions.setConnection(null, false);
 		monitorActions.addLog('Disconnected.');
+	}
+
+	async function handleSend() {
+		if (!connection || !txInput.trim()) return;
+		const line = txInput.trim();
+		monitorActions.addLog('TX: ' + line);
+		await writeLine(connection, line);
+		monitorActions.setTxInput('');
 	}
 
 	// When a key is clicked in the grid
@@ -90,10 +106,30 @@
 		<div class="panel-grid">
 			<section class="section">
 				<div class="section-header">
-					<h3>Macro Key Grid</h3>
+					<h3>Macro Key Configuration</h3>
+					<div class="view-toggle">
+						<button
+							class="btn btn-ghost btn-sm"
+							class:active={!mockupView}
+							onclick={() => (mockupView = false)}
+						>
+							Grid
+						</button>
+						<button
+							class="btn btn-ghost btn-sm"
+							class:active={mockupView}
+							onclick={() => (mockupView = true)}
+						>
+							Device
+						</button>
+					</div>
 				</div>
 				<div class="section-content">
-					<KeyGrid {keys} activeIndex={activeKeyIndex} onkeyclick={handleKeyClick} />
+					{#if mockupView}
+						<KeypadMockup {keys} activeIndex={activeKeyIndex} onkeyclick={handleKeyClick} />
+					{:else}
+						<KeyGrid {keys} activeIndex={activeKeyIndex} onkeyclick={handleKeyClick} />
+					{/if}
 				</div>
 			</section>
 
@@ -101,7 +137,28 @@
 				<div class="section-header">
 					<h3>Serial Monitor</h3>
 				</div>
-				<SerialLog />
+				<div class="section-content space-y-4">
+					<div class="serial-input">
+						<input
+							type="text"
+							placeholder="Type a command to send..."
+							bind:value={txInput}
+							onkeydown={(e) => e.key === 'Enter' && handleSend()}
+							disabled={!connected}
+						/>
+						<button
+							class="btn btn-primary btn-sm"
+							onclick={handleSend}
+							disabled={!connected || !txInput.trim()}
+						>
+							Send
+						</button>
+					</div>
+					<div class="serial-log">
+						<pre>{#each log as logLine}[{logLine.timestamp.toLocaleTimeString()}] {logLine.message}
+							{/each}</pre>
+					</div>
+				</div>
 			</section>
 		</div>
 	</div>
@@ -124,9 +181,68 @@
 		height: 100%;
 	}
 
+	.view-toggle {
+		display: flex;
+		gap: var(--space-1);
+		background: var(--app-panel-bg);
+		border-radius: var(--radius-md);
+		padding: var(--space-1);
+	}
+
+	.view-toggle .btn {
+		border-radius: var(--radius-sm);
+		padding: var(--space-1) var(--space-3);
+		min-width: 60px;
+	}
+
+	.view-toggle .btn.active {
+		background: var(--color-primary-500);
+		color: var(--color-neutral-0);
+	}
+
+	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.serial-input {
+		display: flex;
+		gap: var(--space-3);
+		align-items: center;
+	}
+
+	.serial-input input {
+		flex: 1;
+	}
+
+	.serial-log {
+		background: var(--app-panel-bg);
+		border: 1px solid var(--app-border);
+		border-radius: var(--radius-lg);
+		padding: var(--space-4);
+		max-height: 400px;
+		overflow-y: auto;
+		font-family: var(--font-mono);
+		font-size: var(--text-sm);
+	}
+
+	.serial-log pre {
+		margin: 0;
+		color: var(--app-text);
+		white-space: pre-wrap;
+		word-wrap: break-word;
+	}
+
 	@media (max-width: 768px) {
 		.panel-grid {
 			grid-template-columns: 1fr;
+		}
+
+		.section-header {
+			flex-direction: column;
+			gap: var(--space-3);
+			align-items: flex-start;
 		}
 	}
 </style>
