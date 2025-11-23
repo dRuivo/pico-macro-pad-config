@@ -3,14 +3,33 @@
 	import { requestPort, openPort, closePort, writeLine, startReadLoop } from '$lib/serial';
 
 	$: ({ connected, connection, serialSupported } = $connectionState);
-	$: ({ log, txInput } = $monitorState);
+	$: ({ log } = $monitorState);
+
+	// Use a simple local variable for the input
+	let inputValue = '';
 
 	async function handleSend() {
-		if (!connection || !txInput.trim()) return;
-		const line = txInput.trim();
+		if (!connection || !inputValue.trim()) return;
+		const line = inputValue.trim();
 		monitorActions.addLog('TX: ' + line);
-		await writeLine(connection, line);
-		monitorActions.setTxInput('');
+		try {
+			await writeLine(connection, line);
+		} catch (err) {
+			console.error('Send error:', err);
+			monitorActions.addLog('Error sending: ' + (err instanceof Error ? err.message : String(err)));
+		}
+		inputValue = ''; // Clear the input
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			handleSend();
+		}
+	}
+
+	function handleClear() {
+		monitorActions.clearLog();
 	}
 </script>
 
@@ -19,16 +38,19 @@
 		<input
 			type="text"
 			placeholder="Type a command to send..."
-			bind:value={txInput}
-			onkeydown={(e) => e.key === 'Enter' && handleSend()}
+			bind:value={inputValue}
+			onkeydown={handleKeydown}
 			disabled={!connected}
 		/>
 		<button
 			class="btn btn-primary btn-sm"
 			onclick={handleSend}
-			disabled={!connected || !txInput.trim()}
+			disabled={!connected || !inputValue.trim()}
 		>
 			Send
+		</button>
+		<button class="btn btn-primary btn-sm" onclick={handleClear} disabled={!connected}>
+			Clear Log
 		</button>
 	</div>
 	<div class="serial-log">

@@ -2,7 +2,9 @@
 	import { onMount } from 'svelte';
 	import KeyGrid from '$lib/KeyGrid.svelte';
 	import KeypadMockup from '$lib/KeypadMockup.svelte';
+	import SerialLog from '$lib/SerialLog.svelte';
 	import { requestPort, openPort, closePort, writeLine, startReadLoop } from '$lib/serial';
+	import type { HostCommand, GetConfigCommand } from '$lib/types/protocol';
 	import {
 		connectionState,
 		macropadState,
@@ -17,15 +19,42 @@
 	// Reactive store subscriptions
 	$: ({ connected, connection, serialSupported } = $connectionState);
 	$: ({ keys, activeKeyIndex } = $macropadState);
-	$: ({ log, txInput } = $monitorState);
+	$: ({ log } = $monitorState);
 	$: ({ currentView } = $uiState);
 
 	// Local state for view toggle
-	let mockupView = false;
+	let mockupView = true;
 
 	onMount(() => {
 		connectionActions.setSerialSupported('serial' in navigator);
 	});
+
+	async function requestConfig(conn: any) {
+		const cmd: GetConfigCommand = { cmd: 'get_config' };
+		const json = JSON.stringify(cmd);
+		await writeLine(conn, json);
+	}
+	import type { DeviceMessage } from '$lib/types/protocol';
+	import { isConfigMessage, isStatusMessage } from '$lib/types/protocol';
+
+	function handleLine(line: string) {
+		let msg: DeviceMessage | null = null;
+
+		try {
+			msg = JSON.parse(line);
+		} catch {
+			console.warn('Non-JSON line:', line);
+			return;
+		}
+
+		if (isConfigMessage(msg)) {
+			// update UI with msg.macros
+		} else if (isStatusMessage(msg)) {
+			// show status or error
+		} else {
+			console.warn('Unknown message:', msg);
+		}
+	}
 
 	async function handleConnect() {
 		try {
@@ -37,7 +66,10 @@
 			// start read loop (fire-and-forget)
 			startReadLoop(conn, (line: string) => {
 				monitorActions.addLog('RX: ' + line);
+				handleLine(line);
 			});
+
+			await requestConfig(conn);
 		} catch (err: any) {
 			console.error(err);
 			monitorActions.addLog('Error: ' + (err?.message || String(err)));
@@ -49,14 +81,6 @@
 		await closePort(connection);
 		connectionActions.setConnection(null, false);
 		monitorActions.addLog('Disconnected.');
-	}
-
-	async function handleSend() {
-		if (!connection || !txInput.trim()) return;
-		const line = txInput.trim();
-		monitorActions.addLog('TX: ' + line);
-		await writeLine(connection, line);
-		monitorActions.setTxInput('');
 	}
 
 	// When a key is clicked in the grid
@@ -137,28 +161,7 @@
 				<div class="section-header">
 					<h3>Serial Monitor</h3>
 				</div>
-				<div class="section-content space-y-4">
-					<div class="serial-input">
-						<input
-							type="text"
-							placeholder="Type a command to send..."
-							bind:value={txInput}
-							onkeydown={(e) => e.key === 'Enter' && handleSend()}
-							disabled={!connected}
-						/>
-						<button
-							class="btn btn-primary btn-sm"
-							onclick={handleSend}
-							disabled={!connected || !txInput.trim()}
-						>
-							Send
-						</button>
-					</div>
-					<div class="serial-log">
-						<pre>{#each log as logLine}[{logLine.timestamp.toLocaleTimeString()}] {logLine.message}
-							{/each}</pre>
-					</div>
-				</div>
+				<SerialLog />
 			</section>
 		</div>
 	</div>
@@ -204,34 +207,6 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-	}
-
-	.serial-input {
-		display: flex;
-		gap: var(--space-3);
-		align-items: center;
-	}
-
-	.serial-input input {
-		flex: 1;
-	}
-
-	.serial-log {
-		background: var(--app-panel-bg);
-		border: 1px solid var(--app-border);
-		border-radius: var(--radius-lg);
-		padding: var(--space-4);
-		max-height: 400px;
-		overflow-y: auto;
-		font-family: var(--font-mono);
-		font-size: var(--text-sm);
-	}
-
-	.serial-log pre {
-		margin: 0;
-		color: var(--app-text);
-		white-space: pre-wrap;
-		word-wrap: break-word;
 	}
 
 	@media (max-width: 768px) {
