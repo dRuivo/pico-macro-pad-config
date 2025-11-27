@@ -1,15 +1,17 @@
 import { writable } from 'svelte/store';
-import type { Key, Connection, LogLine } from './types.js';
+import type { Key, LogLine } from './types.js';
+import type { SerialConnection } from './serial/types.js';
+import { getSerialConnection } from './serial.js';
 
 // Serial connection state
 export const connectionState = writable<{
 	connected: boolean;
-	connection: Connection | null;
 	serialSupported: boolean;
+	serialConnection: SerialConnection | null;
 }>({
 	connected: false,
-	connection: null,
-	serialSupported: false
+	serialSupported: false,
+	serialConnection: null
 });
 
 // Macro pad state
@@ -81,12 +83,24 @@ export const connectionActions = {
 		}));
 	},
 
-	setConnection: (connection: Connection | null, connected: boolean) => {
+	setConnected: (connected: boolean) => {
 		connectionState.update((state) => ({
 			...state,
-			connection,
 			connected
 		}));
+	},
+
+	// New action for the serial abstraction layer
+	setSerialConnection: (serialConnection: SerialConnection | null) => {
+		connectionState.update((state) => ({
+			...state,
+			serialConnection
+		}));
+	},
+
+	// Get or create the global serial connection
+	getSerialConnection: (): SerialConnection => {
+		return getSerialConnection();
 	}
 };
 

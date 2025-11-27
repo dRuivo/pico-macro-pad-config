@@ -1,19 +1,18 @@
 <script lang="ts">
 	import { monitorState, connectionState, monitorActions } from './store';
-	import { requestPort, openPort, closePort, writeLine, startReadLoop } from '$lib/serial';
 
-	$: ({ connected, connection, serialSupported } = $connectionState);
+	$: ({ connected, serialConnection, serialSupported } = $connectionState);
 	$: ({ log } = $monitorState);
 
 	// Use a simple local variable for the input
 	let inputValue = '';
 
 	async function handleSend() {
-		if (!connection || !inputValue.trim()) return;
+		if (!serialConnection || !inputValue.trim()) return;
 		const line = inputValue.trim();
 		monitorActions.addLog('TX: ' + line);
 		try {
-			await writeLine(connection, line);
+			await serialConnection.writeLine(line);
 		} catch (err) {
 			console.error('Send error:', err);
 			monitorActions.addLog('Error sending: ' + (err instanceof Error ? err.message : String(err)));

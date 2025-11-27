@@ -5,10 +5,12 @@ A modern web-based configuration tool for the Raspberry Pi Pico 4×4 RGB Macro P
 ## 🚀 Features
 
 - **Web Serial API Integration**: Direct browser-to-device communication
+- **Serial Emulation**: Mock device for development and testing without hardware
 - **Real-time Configuration**: Live macro testing and instant feedback
 - **Dual View Modes**: Grid view and realistic device mockup
 - **Modern UI/UX**: Clean wireframe-style design with accessibility features
 - **Serial Monitor**: Built-in terminal for device communication and debugging
+- **Development Tools**: Comprehensive testing page with multiple connection modes
 - **Type-Safe**: Full TypeScript implementation with proper type definitions
 - **Responsive Design**: Works seamlessly across desktop and mobile devices
 
@@ -65,7 +67,44 @@ pnpm format
 
 # Run tests
 pnpm test
+
+# Access development tools
+# Visit http://localhost:5173/dev for serial emulation testing
 ```
+
+### Development Workflow
+
+#### **Serial Emulation for Development**
+
+The application includes a comprehensive serial emulation layer that allows development and testing without physical hardware:
+
+```typescript
+import { createSerialConnection } from '$lib/serial.js';
+
+// Emulated connection for development
+const emulatedSerial = createSerialConnection('emulated', {
+	emulatorOptions: {
+		connectionDelay: 1000,
+		deviceType: 'stable' // or 'unstable', 'slow'
+	}
+});
+
+// Real hardware connection
+const realSerial = createSerialConnection('real');
+
+// Auto-detection (fallback to emulated if Web Serial unavailable)
+const autoSerial = createSerialConnection('auto');
+```
+
+#### **Development Features**
+
+- **Mock MacroPad Device**: Realistic command/response simulation
+- **Multiple Device Types**: Stable, unstable, and slow response patterns
+- **Protocol Testing**: Validate JSON command parsing and responses
+- **Error Simulation**: Test error handling and edge cases
+- **Development Page**: Visit `/dev` route for comprehensive testing interface
+
+````
 
 ## 🏗️ Project Architecture
 
@@ -112,7 +151,7 @@ connectionState: {
 	connection: Connection | null; // Active serial connection
 	serialSupported: boolean; // Browser compatibility
 }
-```
+````
 
 #### **Macro Pad State**
 

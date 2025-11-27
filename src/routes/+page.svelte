@@ -3,8 +3,9 @@
 	import KeyGrid from '$lib/KeyGrid.svelte';
 	import KeypadMockup from '$lib/KeypadMockup.svelte';
 	import SerialLog from '$lib/SerialLog.svelte';
-	import { requestPort, openPort, closePort, writeLine, startReadLoop } from '$lib/serial';
-	import type { HostCommand, GetConfigCommand } from '$lib/types/protocol';
+	import { createSerialConnection, type SerialConnection, type SerialMode } from '$lib/serial';
+	import type { HostCommand, GetConfigCommand, DeviceMessage } from '$lib/types/protocol';
+	import { isConfigMessage, isStatusMessage } from '$lib/types/protocol';
 	import {
 		connectionState,
 		macropadState,
@@ -17,25 +18,35 @@
 	} from '$lib/store';
 
 	// Reactive store subscriptions
-	$: ({ connected, connection, serialSupported } = $connectionState);
+	$: ({ connected, serialSupported, serialConnection } = $connectionState);
 	$: ({ keys, activeKeyIndex } = $macropadState);
 	$: ({ log } = $monitorState);
 	$: ({ currentView } = $uiState);
 
-	// Local state for view toggle
+	// Local state for view toggle and connection mode
 	let mockupView = true;
+	let connectionMode: SerialMode = 'auto';
+
+	// Connection mode options for the dropdown
+	const connectionModes = [
+		{
+			value: 'auto',
+			label: '🔄 Auto-detect',
+			description: 'Real hardware with fallback to emulated'
+		},
+		{ value: 'real', label: '🔌 Real Hardware', description: 'Connect to physical device only' },
+		{ value: 'emulated', label: '🎭 Demo Mode', description: 'Mock device for testing and demos' }
+	] as const;
 
 	onMount(() => {
 		connectionActions.setSerialSupported('serial' in navigator);
 	});
 
-	async function requestConfig(conn: any) {
+	async function requestConfig(conn: SerialConnection) {
 		const cmd: GetConfigCommand = { cmd: 'get_config' };
 		const json = JSON.stringify(cmd);
-		await writeLine(conn, json);
+		await conn.writeLine(json);
 	}
-	import type { DeviceMessage } from '$lib/types/protocol';
-	import { isConfigMessage, isStatusMessage } from '$lib/types/protocol';
 
 	function handleLine(line: string) {
 		let msg: DeviceMessage | null = null;
@@ -58,16 +69,40 @@
 
 	async function handleConnect() {
 		try {
-			const port = await requestPort();
-			const conn = await openPort(port, 115200);
-			connectionActions.setConnection(conn, true);
-			monitorActions.addLog('Connected to device.');
+			const modeLabel =
+				connectionModes.find((m) => m.value === connectionMode)?.label || connectionMode;
+			monitorActions.addLog(`Connecting in ${modeLabel} mode...`);
 
-			// start read loop (fire-and-forget)
-			startReadLoop(conn, (line: string) => {
+			// Create connection with selected mode
+			const conn = createSerialConnection(connectionMode, {
+				emulatorOptions: {
+					connectionDelay: 1000,
+					deviceType: 'stable'
+				}
+			});
+
+			// Set up event listeners
+			conn.onData((line: string) => {
 				monitorActions.addLog('RX: ' + line);
 				handleLine(line);
 			});
+
+			conn.onError((error: Error) => {
+				monitorActions.addLog(`Error: ${error.message}`);
+			});
+
+			conn.onDisconnect(() => {
+				monitorActions.addLog('Disconnected');
+				connectionActions.setConnected(false);
+				connectionActions.setSerialConnection(null);
+			});
+
+			// Connect
+			await conn.open();
+
+			connectionActions.setSerialConnection(conn);
+			connectionActions.setConnected(true);
+			monitorActions.addLog('Connected to device.');
 
 			await requestConfig(conn);
 		} catch (err: any) {
@@ -77,10 +112,16 @@
 	}
 
 	async function handleDisconnect() {
-		if (!connection) return;
-		await closePort(connection);
-		connectionActions.setConnection(null, false);
-		monitorActions.addLog('Disconnected.');
+		if (serialConnection) {
+			try {
+				await serialConnection.close();
+				monitorActions.addLog('Disconnected.');
+			} catch (err: any) {
+				monitorActions.addLog(`Disconnect error: ${err?.message || String(err)}`);
+			}
+			connectionActions.setConnected(false);
+			connectionActions.setSerialConnection(null);
+		}
 	}
 
 	// When a key is clicked in the grid
@@ -91,15 +132,14 @@
 		monitorActions.addLog(`Key clicked: #${index} - ${key.label}`);
 
 		// Example: send a JSON "key pressed" message to the device.
-		// Later we can turn this into real config editing or live testing.
-		if (connection) {
+		if (serialConnection && connected) {
 			const msg = JSON.stringify({
 				cmd: 'test_macro',
 				index,
 				label: key.label
 			});
 			monitorActions.addLog('TX: ' + msg);
-			writeLine(connection, msg);
+			serialConnection.writeLine(msg);
 		}
 	}
 </script>
@@ -112,16 +152,30 @@
 		</div>
 
 		{#if !serialSupported}
-			<div class="status-error">
-				<p>⚠️ Web Serial is not supported in this browser. Try Chrome or Edge.</p>
+			<div class="status-warning">
+				<p>⚠️ Web Serial not supported. Using demo mode only.</p>
 			</div>
 		{:else}
-			<div class="space-x-2">
-				{#if !connected}
-					<button class="btn btn-primary" onclick={handleConnect}>Connect Device</button>
-				{:else}
-					<button class="btn btn-secondary" onclick={handleDisconnect}>Disconnect</button>
-				{/if}
+			<div class="connection-controls">
+				<div class="mode-selector">
+					<label for="connection-mode">Connection Mode:</label>
+					<select id="connection-mode" bind:value={connectionMode} disabled={connected}>
+						{#each connectionModes as mode}
+							<option value={mode.value}>{mode.label}</option>
+						{/each}
+					</select>
+					<small class="mode-description">
+						{connectionModes.find((m) => m.value === connectionMode)?.description}
+					</small>
+				</div>
+
+				<div class="connection-actions">
+					{#if !connected}
+						<button class="btn btn-primary" onclick={handleConnect}>Connect Device</button>
+					{:else}
+						<button class="btn btn-secondary" onclick={handleDisconnect}>Disconnect</button>
+					{/if}
+				</div>
 			</div>
 		{/if}
 	</header>
@@ -209,6 +263,83 @@
 		align-items: center;
 	}
 
+	/* Connection Controls */
+	.connection-controls {
+		display: flex;
+		align-items: flex-end;
+		gap: var(--space-6);
+	}
+
+	.mode-selector {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		min-width: 200px;
+	}
+
+	.mode-selector label {
+		font-size: var(--text-xs);
+		font-weight: 600;
+		color: var(--app-text);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin: 0;
+	}
+
+	.mode-selector select {
+		height: var(--input-height-md);
+		font-size: var(--text-sm);
+		border-radius: var(--radius-md);
+		border: 1px solid var(--app-border);
+		background: var(--app-bg);
+		color: var(--app-text);
+		padding: 0 var(--space-3);
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.mode-selector select:hover:not(:disabled) {
+		border-color: var(--color-primary-300);
+	}
+
+	.mode-selector select:focus {
+		outline: none;
+		border-color: var(--color-primary-500);
+		box-shadow: 0 0 0 3px rgb(45 140 75 / 0.1);
+	}
+
+	.mode-selector select:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.mode-description {
+		font-size: var(--text-xs);
+		color: var(--app-text-muted);
+		margin: 0;
+		font-style: italic;
+		line-height: 1.3;
+	}
+
+	.connection-actions {
+		display: flex;
+		gap: var(--space-2);
+	}
+
+	.status-warning {
+		background: var(--color-warning-50);
+		color: var(--color-warning-700);
+		padding: var(--space-3) var(--space-4);
+		border-radius: var(--radius-md);
+		border: 1px solid var(--color-warning-200);
+	}
+
+	.status-warning p {
+		margin: 0;
+		font-size: var(--text-sm);
+		font-weight: 500;
+	}
+
 	@media (max-width: 768px) {
 		.panel-grid {
 			grid-template-columns: 1fr;
@@ -217,6 +348,30 @@
 		.section-header {
 			flex-direction: column;
 			gap: var(--space-3);
+			align-items: flex-start;
+		}
+
+		.connection-controls {
+			flex-direction: column;
+			align-items: stretch;
+			gap: var(--space-4);
+		}
+
+		.mode-selector {
+			min-width: auto;
+		}
+
+		.topbar {
+			flex-direction: column;
+			height: auto;
+			padding: var(--space-4);
+			gap: var(--space-4);
+			align-items: stretch;
+		}
+
+		.topbar > div {
+			flex-direction: column;
+			gap: var(--space-2);
 			align-items: flex-start;
 		}
 	}
